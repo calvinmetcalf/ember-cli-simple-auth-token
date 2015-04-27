@@ -33,6 +33,25 @@ export default TokenAuthenticator.extend({
   refreshAccessTokens: true,
 
   /**
+    The name of the property in session that contains token used for authentation.
+
+    @property refreshTokenPropertyName
+    @type String
+    @default 'refresh-token'
+  */
+  refreshTokenPropertyName: 'refresh-token',
+
+  /**
+    Sets whether the authenticator should use seperate authentation and
+    authorization tokens.
+    @property dualTokens
+    @type Boolean
+    @default false
+  */
+  dualTokens: false,
+
+
+  /**
     The number of seconds to subtract from the token's time of expiration when
     scheduling the automatic token refresh call.
     @property refreshLeeway
@@ -77,6 +96,8 @@ export default TokenAuthenticator.extend({
     this.refreshLeeway = Configuration.refreshLeeway;
     this.tokenExpireName = Configuration.tokenExpireName;
     this.timeFactor = Configuration.timeFactor;
+    this.refreshTokenPropertyName = Configuration.refreshTokenPropertyName;
+    this.dualTokens = Configuration.dualTokens;
     this.headers = Configuration.headers;
   },
 
@@ -106,14 +127,14 @@ export default TokenAuthenticator.extend({
       var now = (new Date()).getTime();
       var expiresAt = _this.resolveTime(dataObject.get(_this.tokenExpireName));
       var token = dataObject.get(_this.tokenPropertyName);
-
+      var tokenData
       if (Ember.isEmpty(token)) {
         return reject(new Error('empty token'));
       }
       if (Ember.isEmpty(expiresAt)) {
         // Fetch the expire time from the token data since `expiresAt`
         // wasn't included in the data object that was passed in.
-        var tokenData = _this.getTokenData(data[_this.tokenPropertyName]);
+        tokenData = _this.getTokenData(data[_this.tokenPropertyName]);
         expiresAt = _this.resolveTime(tokenData[_this.tokenExpireName]);
         if (Ember.isEmpty(expiresAt)) {
           return resolve(data);
@@ -136,6 +157,20 @@ export default TokenAuthenticator.extend({
           }));
         } else {
           reject(new Error('unable to refresh token'));
+        }
+      } else if (_this.dualTokens) {
+        tokenData = _this.getTokenData(data[_this.refreshTokenPropertyName]);
+        expiresAt = _this.resolveTime(tokenData[_this.tokenExpireName]);
+        if (expiresAt !== expiresAt) {
+          return reject(new Error('invalid expiration'));
+        }
+        if (expiresAt > now) {
+          resolve(_this.refreshAccessToken(
+            dataObject.get(_this.refreshTokenPropertyName)).then(function () {
+            return data;
+          }));
+        } else {
+          reject(new Error('token is expired'));
         }
       } else {
         reject(new Error('token is expired'));
